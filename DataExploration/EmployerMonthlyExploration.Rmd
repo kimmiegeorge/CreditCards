@@ -1,0 +1,90 @@
+---
+title: "Data Exploration - Monthly Deposits"
+output:
+  html_document:
+    theme: journal
+    toc: yes
+    css: styles.css
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+# trace(stargazer:::.stargazer.wrap, edit = T) #7100
+#setwd('/Users/kimmiegeorge/Dropbox/SPAC_Round3/Results/Options')
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+library(pacman)
+p_load(data.table, dplyr, stargazer, DescTools, zoo, lfe, car, foreign, MASS, konfound, car, ppcor, lubridate, ggplot2, fwildclusterboot, fixest, Hmisc)
+
+```
+
+
+```{r loadData, echo=FALSE}
+data <- fread("~/Dropbox/CreditCards/Data/MonthlyDeposits.csv")
+
+# year month
+data[, YearMonth := ifelse(Month < 10, paste0(as.character(Year), "0", as.character(Month)), paste0(as.character(Year), as.character(Month)))]
+data[, YearMonth := as.yearmon(YearMonth, format = "%Y%m")]
+
+```
+
+# Total Employers Making Deposits Per Month
+```{r YMAgg, echo=FALSE}
+
+YMAgg <- data[, list(TotalEmployers = uniqueN(ARM_MERCHANT_NAME)), .(YearMonth)]
+plt <- ggplot(aes(x = YearMonth, y = TotalEmployers), data = YMAgg) + geom_line()
+plot(plt)
+
+```
+
+# Total Employers Making Deposits To Over 500 Cards Per Month
+
+```{r YMAgg2, echo=FALSE}
+
+YMAgg <- data[NumCards > 500, list(TotalEmployers = uniqueN(ARM_MERCHANT_NAME)), .(YearMonth)]
+plt <- ggplot(aes(x = YearMonth, y = TotalEmployers), data = YMAgg) + geom_line()
+plot(plt)
+
+```
+
+# Total Employers Making Deposits To Over 100 Cards Per Month
+
+```{r YMAgg3, echo=FALSE}
+
+YMAgg <- data[NumCards > 100, list(TotalEmployers = uniqueN(ARM_MERCHANT_NAME)), .(YearMonth)]
+plt <- ggplot(aes(x = YearMonth, y = TotalEmployers), data = YMAgg) + geom_line()
+plot(plt)
+
+```
+
+# Total Employers Making Deposits To Over 50 Cards Per Month
+
+```{r YMAgg4, echo=FALSE}
+
+YMAgg <- data[NumCards > 50, list(TotalEmployers = uniqueN(ARM_MERCHANT_NAME)), .(YearMonth)]
+plt <- ggplot(aes(x = YearMonth, y = TotalEmployers), data = YMAgg) + geom_line()
+plot(plt)
+
+```
+
+# Main Employers
+
+```{r MainEmp, echo = FALSE}
+
+mainEmp <- data[, list(TotalDep = sum(TotalDepositAmount)), .(ARM_MERCHANT_NAME)]
+mainEmp[, FullDep := sum(data$TotalDepositAmount)]
+mainEmp[, Percent := 100*TotalDep/FullDep]
+mainEmp <- mainEmp[order(-Percent)]
+
+head(mainEmp[, .(ARM_MERCHANT_NAME, Percent)], 10)
+
+```
+
+# Distribution - Monthly Number of Cards Deposited To Per Employer
+
+```{r MainEmp2, echo = FALSE}
+
+summary(data$NumCards)
+
+```
