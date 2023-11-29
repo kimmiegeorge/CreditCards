@@ -76,7 +76,7 @@ ea_merge <- unique(ea[, .(PERMNO, rdq, datadate)])
 
 
 # load crsp 
-crsp <- readRDS('/Users/kimmiegeorge/Dropbox/MainDataFiles/CRSP/Processed/CRSPDaily_2000_2022.RDS')
+crsp <- readRDS('~/Dropbox/MainDataFiles/CRSP/Processed/CRSPDaily_2000_2022.RDS')
 crsp <- crsp[, .(PERMNO, date, PRC)]
 crsp <- crsp[!is.na(PRC)]
 #setnames(crsp, 'PERMNO', 'permno')
@@ -87,9 +87,15 @@ ea_merge <- crsp[ea_merge, roll = T]
 #### Merge back with ibesSummary#### 
 ibesSummary <- ea_merge[, .(PERMNO, rdq, PRC)][ibesSummary, on = .(PERMNO, rdq)]
 ibesSummary[, AnalystSUE := (Actual-MedianEstimate)/PRC]
+ibesSummary[, AnalystSUEDiff := (Actual-MedianEstimate)]
 
 ###### add back to earnings file 
-ea <- ibesSummary[, .(PERMNO, rdq, AnalystSUE, PRC)][ea, on = .(PERMNO, rdq)]
+ea <- ibesSummary[, .(PERMNO, rdq, AnalystSUE, AnalystSUEDiff, PRC)][ea, on = .(PERMNO, rdq)]
+
+# add industry
+ind <- readRDS("~/Dropbox/MainDataFiles/Compustat/ProcessedData/CompQuarterlyPERMNO_1990_2022.RDS")
+
 
 write.csv(ea, "/Users/kimmiegeorge/Dropbox/CreditCards/Data/SampleEAData.csv")
+
 

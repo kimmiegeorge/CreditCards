@@ -1,0 +1,86 @@
+---
+title: "Analysis"
+output:
+  html_document:
+    theme: journal
+    toc: yes
+    css: styles.css
+  pdf_document:
+    toc: yes
+---
+
+
+
+```{r setup, include=FALSE}
+# trace(stargazer:::.stargazer.wrap, edit = T) #7100
+#setwd('/Users/kimmiegeorge/Dropbox/SPAC_Round3/Results/Options')
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+library(pacman)
+p_load(data.table, dplyr, stargazer, DescTools, zoo, lfe, car, foreign, MASS, konfound, car, ppcor, lubridate, ggplot2, fwildclusterboot, fixest, Hmisc, gridExtra)
+
+
+```
+
+```{css, echo = FALSE}
+
+table, td, th {
+  border: none;
+  padding-left: 1em;
+  padding-right: 1em;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+```
+
+```{r loadData, echo = FALSE}
+
+dta_dir <- '~/Dropbox/CreditCards/Data/DiD_Filter50'
+files <- list.files(dta_dir)
+
+dta <- data.table()
+
+for (f in files){
+  file <- fread(paste0(dta_dir, '/', f))
+  dta <- rbind(dta, file)
+}
+
+ea <- fread("~/Dropbox/CreditCards/Data/SampleEAData.csv")
+rm(file)
+rm(files)
+```
+
+```{r createVars, echo = FALSE}
+dta[, UserEvent := paste0(ARM_ID_NBR, "_", EventEA_ID)]
+dta[, MonthEvent := paste0(as.character(MonthID), "_", EventEA_ID)]
+dta[, TickerMonth := paste0(MERCHANT_TICKER, "_", as.character(MonthID))]
+```
+
+```{r Wins, echo = FALSE}
+
+# Wins
+dta[, DepositsWin := Winsorize(MonthlyDeposits, probs = c(0.01, 0.99))]
+dta[, logDeposits := log(MonthlyDeposits)]
+dta[, logDepositsWin := Winsorize(logDeposits, probs = c(0.01, 0.99))]
+
+```
+
+```{r sub, echo = FALSE}
+sub <- dta[MonthID >= 22]
+sub[, CountMonths := uniqueN(MonthID), .(EventEA_ID)]
+sub <- sub[CountMonths == 6]
+
+```
+
+```{r reg, echo = FALSE}
+reg_full <- felm(logDeposits ~ POST:Treated|UserEvent+MonthEvent|0|TickerMonth, data = dta)
+summary(reg)
+```
+
+```{r reg2, echo = FALSE}
+reg <- felm(logDeposits ~ POST|UserEvent|0|0, data = dta[Treated == 1])
+
+```

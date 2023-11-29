@@ -1,0 +1,153 @@
+---
+title: "Analysis"
+output:
+  html_document:
+    theme: journal
+    toc: yes
+    css: styles.css
+  pdf_document:
+    toc: yes
+---
+
+
+
+```{r setup, include=FALSE}
+# trace(stargazer:::.stargazer.wrap, edit = T) #7100
+#setwd('/Users/kimmiegeorge/Dropbox/SPAC_Round3/Results/Options')
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+library(pacman)
+p_load(data.table, dplyr, stargazer, DescTools, zoo, lfe, car, foreign, MASS, konfound, car, ppcor, lubridate, ggplot2, fwildclusterboot, fixest, Hmisc, gridExtra)
+
+
+```
+
+
+```{css, echo = FALSE}
+
+table, td, th {
+  border: none;
+  padding-left: 1em;
+  padding-right: 1em;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+```
+
+```{r loadData, echo = FALSE}
+
+dta_dir <- '~/Dropbox/CreditCards/Data/FourQuarterCards'
+files <- list.files(dta_dir)
+
+dta <- data.table()
+
+for (f in files){
+  file <- fread(paste0(dta_dir, '/', f))
+  dta <- rbind(dta, file)
+}
+
+ea <- fread("~/Dropbox/CreditCards/Data/SampleEAData.csv")
+rm(file)
+rm(files)
+```
+
+```{r createVar, eval = FALSE, echo = FALSE}
+dta[, Suspect := ifelse(AnalystSUEDiff <= 0.02 & AnalystSUEDiff >= 0, 1, 0)]
+dta[, YearQ := as.yearqtr(datadate)]
+dta[, CountCards := uniqueN(ARM_ID_NBR), .(MERCHANT_TICKER)]
+
+dta[, QuarterlyDeposits := Winsorize(QuarterlyDeposits, probs = c(0.01, 0.99))]
+dta[, logDeposits := log(QuarterlyDeposits)]
+
+test1 <- felm(logDeposits ~ Suspect|ARM_ID_NBR|0|YearQ, data = dta[ MERCHANT_TICKER == "ARMK" ])
+summary(test1)
+```
+
+```{r plots, echo=FALSE}
+
+# tickers over 1000 cards full sample 
+dta[, FullSampleCards := uniqueN(ARM_ID_NBR), .(MERCHANT_TICKER)]
+over1000 <- unique(dta[FullSampleCards > 1000]$MERCHANT_TICKER)
+
+# create list to store plots 
+plots <- list()
+
+# loop through tickers 
+for (t in over1000){
+  
+  # pull data
+  dta_t <- dta[MERCHANT_TICKER == t]
+  
+  # aggregate 
+  dta_agg <- dta_t[, list(AvgDeposits = mean(QuarterlyDeposits), 
+                          AvglogDeposits = mean(logDeposits), 
+                          TotalCards = uniqueN(ARM_ID_NBR)), .(YearQ, datadate, Suspect)]
+  
+  dta_agg[, Year := year(datadate)]
+  dta_agg <- dta_agg[Year > 2012 & Year < 2021]
+  
+  # suspect quarters
+  suspect_qtrs <- unique(dta_agg[Suspect == 1]$datadate)
+  
+  
+  # create plot 
+  plot <- ggplot(aes(x = datadate, y = AvgDeposits), data = dta_agg) + geom_line() + 
+    geom_vline(xintercept = suspect_qtrs, linetype = "dashed", color = "red")
+  
+  plots <- c(plots, list(plot))
+  
+}
+
+grid.arrange(grobs =plots, ncol = 2)
+```
+
+```{r agg, echo = FALSE}
+dta_nowmt <- dta[MERCHANT_TICKER != "WMT"]
+dta_nowmt[, QuarterlyTotalCards := uniqueN(ARM_ID_NBR), .(YearQ)]
+
+
+dta_agg <- dta_nowmt[, list(NumCards = uniqueN(ARM_ID_NBR), 
+                      TotalDeposits = sum(QuarterlyDeposits)), .(MERCHANT_TICKER, datadate, 
+                                                                 YearQ, Suspect, QuarterlyTotalCards)]
+dta_agg[, NumCardsScaled := NumCards/QuarterlyTotalCards]1`2
+dta_agg[, AvgCards := mean(NumCards), .(MERCHANT_TICKER)]
+
+dta_agg[, logTotalDeposits := log(TotalDeposits)]
+dta_agg[, logCards := log(NumCards)]
+test <- felm(NumCardsScaled ~ Suspect|MERCHANT_TICKER + YearQ|0|YearQ, data = dta_agg[AvgCards > 100])
+summary(test)
+
+```
+
+
+```{r subsample, echo = FALSE}
+
+subsample <- dta[Year(datadate) %in% c(2015:2018)]
+subsample[, TotalQuarters := uniqueN(datadate), .(ARM_ID_NBR)]
+subsample <- subsample[TotalQuarters == 16]
+
+test1 <- felm(QuarterlyDeposits ~ Suspect|ARM_ID_NBR + MERCHANT_TICKER + YearQ|0|MERCHANT_TICKER, data = subsample)
+summary(test1)
+```
+
+```{r yearlyReg, echo= FALSE}
+
+regs <- list()
+
+for (year in c(2013:2020)){
+  print(year)
+  subsample <- dta[Year(datadate) == year]
+  subsample[, TotalQuarters := uniqueN(datadate), .(ARM_ID_NBR)]
+  
+  # keep four quarters
+  subsample <- subsample[TotalQuarters == 4]
+  
+  reg <- felm(logDeposits ~ Suspect|ARM_ID_NBR + MERCHANT_TICKER + YearQ|0|MERCHANT_TICKER, data = subsample)
+  regs <- c(regs, list(reg))
+}
+
+
+```
