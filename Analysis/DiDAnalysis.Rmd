@@ -1,5 +1,5 @@
 ---
-title: "Analysis"
+title: "Payroll Cards - Suspect EA Analysis"
 output:
   html_document:
     theme: journal
@@ -9,6 +9,7 @@ output:
     toc: yes
 ---
 
+Data is formed by identifying "suspect" firm-quarters, with EPS beating analyst expectations by 2 cents or less, following prior literature. Employees of these firms in these quarters are identified as treated employees. Control employees are identified as employees of firms with non-suspect earnings over the same time period. The quarter prior to the suspect quarter is used as the "pre" period, and the suspect quarter is used as the "post" period. Employees are only included for each event if they receive payments each month of the pre- and post- periods.
 
 
 ```{r setup, include=FALSE}
@@ -36,6 +37,8 @@ table, td, th {
 
 ```
 
+
+
 ```{r loadData, echo = FALSE}
 
 dta_dir <- '~/Dropbox/CreditCards/Data/DiD_Filter50'
@@ -53,6 +56,9 @@ rm(file)
 rm(files)
 ```
 
+
+
+
 ```{r createVars, echo = FALSE}
 dta[, UserEvent := paste0(ARM_ID_NBR, "_", EventEA_ID)]
 dta[, MonthEvent := paste0(as.character(MonthID), "_", EventEA_ID)]
@@ -68,19 +74,207 @@ dta[, logDepositsWin := Winsorize(logDeposits, probs = c(0.01, 0.99))]
 
 ```
 
-```{r sub, echo = FALSE}
+```{r UserCounts, echo = FALSE, results="asis"}
+
+unique_users <- unique(dta[, .(ARM_ID_NBR, MERCHANT_TICKER)])
+counts <- unique_users[, list(NumEmployees= uniqueN(ARM_ID_NBR)), .(MERCHANT_TICKER)]
+counts <- counts[order(NumEmployees)]
+
+stargazer(counts, type = "html", summary = FALSE)
+
+```
+
+
+
+# Description of Events
+```{r eventDesc, echo = FALSE, results = "asis"}
+
+eventLevel <- dta[, list(TreatedFirm = MERCHANT_TICKER[Treated==1][1],
+                        SuspectQuarterStartMonth = MonthID[POST==1][1],
+                        NumUsers = uniqueN(ARM_ID_NBR), 
+                         FractionTreated = uniqueN(ARM_ID_NBR[Treated == 1])/uniqueN(ARM_ID_NBR), 
+                         NumControlUsers = uniqueN(ARM_ID_NBR[Treated == 0])/uniqueN(ARM_ID_NBR), 
+                         NumControlFirms = uniqueN(MERCHANT_TICKER[Treated == 0])), .(EventEA_ID)]
+
+eventLevel <- eventLevel[order(SuspectQuarterStartMonth)]
+
+stargazer(eventLevel, summary = FALSE, type= "html")
+
+```
+
+
+# Description of Events - WMT Removed
+```{r eventDesc2, echo = FALSE, results = "asis"}
+
+eventLevel_noWMT <- dta[MERCHANT_TICKER != "WMT" & substr(EventEA_ID, 1, 3) != "WMT", list(TreatedFirm = MERCHANT_TICKER[Treated==1][1],
+                        SuspectQuarterStartMonth = MonthID[POST==1][1],
+                        NumUsers = uniqueN(ARM_ID_NBR), 
+                         FractionTreated = uniqueN(ARM_ID_NBR[Treated == 1])/uniqueN(ARM_ID_NBR), 
+                         NumControlUsers = uniqueN(ARM_ID_NBR[Treated == 0])/uniqueN(ARM_ID_NBR), 
+                         NumControlFirms = uniqueN(MERCHANT_TICKER[Treated == 0])), .(EventEA_ID)]
+
+eventLevel_noWMT <- eventLevel_noWMT[FractionTreated < 1]
+
+eventLevel_noWMT <- eventLevel_noWMT[order(SuspectQuarterStartMonth)]
+
+stargazer(eventLevel_noWMT, summary = FALSE, type= "html")
+
+```
+
+# Descriptives - WMT Included
+
+```{r Descriptives, echo = FALSE, results = "asis"}
+
+# descriptives 
+stargazer(dta[, .(MonthlyDeposits, logDeposits)], 
+                  covariate.labels = c("Total Monthly Deposits", "Log-Adjusted Deposits"), type = "html", median = T, iqr = T,  no.space = TRUE, min.max = F)
+
+```
+
+# Descriptives - WMT Removed
+
+```{r Descriptives2, echo = FALSE, results = "asis"}
+
+# descriptives 
+dta_nowmt <- dta[MERCHANT_TICKER != "WMT" & substr(EventEA_ID, 1, 3) != "WMT"]
+stargazer(dta_nowmt[, .(MonthlyDeposits, logDeposits)], 
+                  covariate.labels = c("Total Monthly Deposits", "Log-Adjusted Deposits"), type = "html", median = T, iqr = T,  no.space = TRUE, min.max = F)
+
+```
+
+
+```{r sub,eval = FALSE, echo = FALSE, results = "asis"}
 sub <- dta[MonthID >= 22]
 sub[, CountMonths := uniqueN(MonthID), .(EventEA_ID)]
 sub <- sub[CountMonths == 6]
 
 ```
 
-```{r reg, echo = FALSE}
-reg_full <- felm(logDeposits ~ POST:Treated|UserEvent+MonthEvent|0|TickerMonth, data = dta)
-summary(reg)
+# Full Reg - WMT Included
+```{r reg, echo = FALSE, results = "asis"}
+reg_full <- felm(logDeposits ~ POST:Treated|UserEvent+MonthEvent|0|MERCHANT_TICKER, data = dta)
+stargazer(reg_full, type = "html", float = FALSE, header = FALSE,  
+            omit.table.layout = "n",  digits = 3, omit.stat = c("ser", "rsq"), df = F,
+            report = "vc*t", 
+          add.lines = list(c("Employee-Event FEs", "Yes"),
+                             c("Year-Month-Event FEs", "Yes")))
 ```
 
-```{r reg2, echo = FALSE}
-reg <- felm(logDeposits ~ POST|UserEvent|0|0, data = dta[Treated == 1])
+# Full Reg - WMT Removed
+```{r reg2, echo = FALSE, results = "asis"}
+reg_full2 <- felm(logDeposits ~ POST:Treated|UserEvent+MonthEvent|0|MERCHANT_TICKER, data = dta[MERCHANT_TICKER != "WMT" & substr(EventEA_ID, 1, 3) != "WMT"])
+stargazer(reg_full2, type = "html", float = FALSE, header = FALSE,  
+            omit.table.layout = "n",  digits = 3, omit.stat = c("ser", "rsq"), df = F,
+            report = "vc*t", 
+          add.lines = list(c("Employee-Event FEs", "Yes"),
+                             c("Year-Month-Event FEs", "Yes")))
+```
 
+# Cross-Sectional - WMT Included
+```{r xs, echo = FALSE, results = "asis"}
+
+dta[, EmployeeAveragePaycheck := mean(MonthlyDeposits), .(ARM_ID_NBR)]
+dta[, MedianEmployeeAveragePaycheck := median(EmployeeAveragePaycheck)]
+dta[, HighPay := ifelse(EmployeeAveragePaycheck > MedianEmployeeAveragePaycheck, 1, 0)]
+
+reg_high <- felm(logDeposits ~ POST:Treated|UserEvent+MonthEvent|0|MERCHANT_TICKER, data = dta[HighPay == 1])
+reg_low <- felm(logDeposits ~ POST:Treated|UserEvent+MonthEvent|0|MERCHANT_TICKER, data = dta[HighPay == 0])
+
+
+stargazer(reg_high, reg_low, type = "html", float = FALSE, header = FALSE,  
+          column.labels = c("High-Pay", "Low-Pay"),
+            omit.table.layout = "n",  digits = 3, omit.stat = c("ser", "rsq"), df = F,
+            report = "vc*t", 
+          add.lines = list(c("Employee-Event FEs", "Yes", "Yes"),
+                             c("Year-Month-Event FEs", "Yes", "Yes")))
+
+
+```
+
+# Cross-Sectional - WMT Removed
+```{r xs2, echo = FALSE, results = "asis"}
+
+dta_nowmt[, EmployeeAveragePaycheck := mean(MonthlyDeposits), .(ARM_ID_NBR)]
+dta_nowmt[, MedianEmployeeAveragePaycheck := median(EmployeeAveragePaycheck)]
+dta_nowmt[, HighPay := ifelse(EmployeeAveragePaycheck > MedianEmployeeAveragePaycheck, 1, 0)]
+
+reg_high <- felm(logDeposits ~ POST:Treated|UserEvent+MonthEvent|0|MERCHANT_TICKER, data = dta_nowmt[HighPay == 1])
+reg_low <- felm(logDeposits ~ POST:Treated|UserEvent+MonthEvent|0|MERCHANT_TICKER, data = dta_nowmt[HighPay == 0])
+
+
+stargazer(reg_high, reg_low, type = "html", float = FALSE, header = FALSE,  
+          column.labels = c("High-Pay", "Low-Pay"),
+            omit.table.layout = "n",  digits = 3, omit.stat = c("ser", "rsq"), df = F,
+            report = "vc*t", 
+          add.lines = list(c("Employee-Event FEs", "Yes", "Yes"),
+                             c("Year-Month-Event FEs", "Yes", "Yes")))
+
+
+```
+
+# Event-By-Event Post*Treat Coefficients - WMT Included 
+
+```{r eventbyevent, echo = FALSE, result= "asis"}
+
+events <- unique(dta$EventEA_ID)
+table <- data.table()
+
+for (event in events){
+  dta_event <- dta[EventEA_ID == event]
+  event_reg <- felm(logDeposits ~ POST:Treated|ARM_ID_NBR + MonthID|0|0, data = dta_event)
+  coef <- event_reg$coefficients[1]
+  p_val <- event_reg$pval[1]
+  stars <- ""
+  if (p_val < 0.1) stars <- "*"
+  if (p_val < 0.05) stars <- "**"
+  if (p_val < 0.01) stars <- "***"
+  
+  row <- data.table(c(event, coef, p_val, stars))
+  row <- t(row)
+  table <- rbind(table, row)
+  
+}
+
+colnames(table) <- c("Event", "Coefficient", "P-Value", "Stars")
+#stargazer(table, summary = FALSE, type = "html")
+
+
+```
+
+```{r hist, echo = FALSE}
+table[, Coefficient := as.numeric(Coefficient)]
+hist(table$Coefficient)
+```
+# Event-By-Event Post*Treat Coefficients - WMT Removed 
+
+```{r eventbyevent2, echo = FALSE, result= "asis"}
+
+events <- unique(dta_nowmt$EventEA_ID)
+table <- data.table()
+
+for (event in events){
+  dta_event <- dta_nowmt[EventEA_ID == event]
+  event_reg <- felm(logDeposits ~ POST:Treated|ARM_ID_NBR + MonthID|0|0, data = dta_event)
+  coef <- event_reg$coefficients[1]
+  p_val <- event_reg$pval[1]
+  stars <- ""
+  if (p_val < 0.1) stars <- "*"
+  if (p_val < 0.05) stars <- "**"
+  if (p_val < 0.01) stars <- "***"
+  
+  row <- data.table(c(event, coef, p_val, stars))
+  row <- t(row)
+  table <- rbind(table, row)
+  
+}
+
+colnames(table) <- c("Event", "Coefficient", "P-Value", "Stars")
+#stargazer(table, summary = FALSE, type = "html")
+
+
+```
+
+```{r hist2, echo = FALSE}
+table[, Coefficient := as.numeric(Coefficient)]
+hist(table$Coefficient)
 ```
