@@ -1,0 +1,78 @@
+---
+title: "Full Sample Analysis"
+output:
+  html_document:
+    theme: journal
+    toc: yes
+    css: styles.css
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+# trace(stargazer:::.stargazer.wrap, edit = T) #7100
+#setwd('/Users/kimmiegeorge/Dropbox/SPAC_Round3/Results/Options')
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+library(pacman)
+p_load(data.table, dplyr, stargazer, DescTools, zoo, lfe, car, foreign, MASS, konfound, car, ppcor, lubridate, ggplot2, fwildclusterboot, fixest, Hmisc, gridExtra)
+
+
+```
+
+```{css, echo = FALSE}
+
+table, td, th {
+  border: none;
+  padding-left: 1em;
+  padding-right: 1em;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+```
+
+```{r loadData, echo = FALSE}
+
+dta_dir <- '~/Dropbox/CreditCards/Data/FullSampleAgg/'
+
+fname <- paste0(dta_dir, "full_dta.RDS")
+dta <- readRDS(fname)
+ea <- fread("~/Dropbox/CreditCards/Data/SampleEAData.csv")
+
+```
+
+```{r add_vars, echo = FALSE}
+
+
+# calculate number of employees per month 
+dta[, EmployeesPerMonth := uniqueN(ARM_ID_NBR), .(MERCHANT_TICKER, year, month)]
+
+# keep at least 500 employees
+dta <- dta[EmployeesPerMonth >= 500]
+
+# log deposits 
+dta[, logDeposits := log(MonthlyDeposits)]
+
+dta[, TICKER_Month := paste0(MERCHANT_TICKER, MonthID)]
+```
+
+```{r reg, echo = FALSE}
+
+reg1 <- felm(logDeposits ~ Suspect|ARM_ID_NBR + MonthID|0|TICKER_Month, data = dta[MERCHANT_TICKER != "WMT"])
+
+```
+
+```{r turnover, echo = FALSE}
+
+# create dt that is for each quarter, whether or not the employee has 3 observations in the future quarter 
+QuarterMonthObs <- dta[, list(NumMonths = .N, 
+                              Suspect = Suspect[1], 
+                              year = year[1], 
+                              month = month[1]), .(ARM_ID_NBR, MERCHANT_TICKER, EA_ID)]
+
+test <- felm(NumMonths ~ Suspect|ARM_ID_NBR + year|0|0, data = QuarterMonthObs)
+
+```
