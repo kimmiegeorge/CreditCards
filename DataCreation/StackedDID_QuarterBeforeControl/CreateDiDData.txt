@@ -1,0 +1,67 @@
+--- Create final DID dataframe
+--- Create Monthly Card-Firm observations with total deposits and number of deposits 
+--- Merge to get monthID then inner merge on Ticker and MonthID from TreatControlMonths
+
+CREATE OR REPLACE TABLE dataset.DIDData AS 
+
+WITH CardFirmMonth AS (
+  SELECT 
+  ARM_ID_NBR, 
+  MERCHANT_TICKER, 
+  MonthID,
+  SUM(CAST(TXN_AMT AS FLOAT64)) AS MonthlyDeposits,
+  COUNT(*) AS NumberofDeposits
+  FROM -- Merge on year month to get Month ID 
+  (
+    SELECT 
+    ds1.*,
+    ds2.MonthID 
+    FROM (
+      SELECT * 
+      FROM `dataset.deposits`
+    )
+     AS ds1
+    LEFT JOIN (
+      SELECT DISTINCT year, month, MonthID
+      FROM `dataset.EA_Months` 
+    ) AS ds2
+    ON
+    EXTRACT(YEAR FROM DATE(ds1.TXN_DATETIME_DERIVED)) = ds2.year 
+    AND EXTRACT(MONTH FROM DATE(ds1.TXN_DATETIME_DERIVED)) = ds2.month
+  )
+  GROUP BY 
+  ARM_ID_NBR,
+  MERCHANT_TICKER,
+  MonthID
+), OriginalQuery AS (
+  -- Your original query here
+  SELECT 
+    ds1.*,
+    ds2.EventEA_ID,
+    ds2.POST,
+    ds2.Treated
+  FROM 
+    CardFirmMonth AS ds1
+  INNER JOIN (
+    SELECT *
+    FROM `dataset.TreatControlMonths`
+  ) AS ds2
+  ON
+    ds1.MERCHANT_TICKER = ds2.TICKER 
+    AND 
+    ds1.MonthID = ds2.MonthID
+)
+
+SELECT 
+  oq.*
+FROM OriginalQuery oq
+INNER JOIN (
+  SELECT ARM_ID_NBR, EventEA_ID
+  FROM OriginalQuery
+  GROUP BY ARM_ID_NBR, EventEA_ID
+  HAVING COUNT(*) = 6
+) filter
+ON oq.ARM_ID_NBR = filter.ARM_ID_NBR AND oq.EventEA_ID = filter.EventEA_ID
+ORDER BY oq.EventEA_ID, oq.MonthID, oq.Treated;
+
+

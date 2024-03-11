@@ -1,0 +1,56 @@
+--- Create Full DiD Months Sample 
+--- Binds Treat and Control Months 
+--- Creates POST variable for Control Months 
+--- Add datadate and EA ID to final df 
+
+
+CREATE OR REPLACE TABLE dataset.TreatControlMonths AS 
+
+WITH ControlDF AS (
+  SELECT
+  ds1.*, 
+  ds2.POST,
+  0 AS Treated
+  FROM 
+  `dataset.ControlMonths` as ds1
+  LEFT JOIN
+  `dataset.TreatmentMonths` as ds2
+  ON 
+  ds1.EventEA_ID = ds2.EventEA_ID AND
+  ds1.MonthID = ds2.MonthID
+), TreatDF AS (
+  SELECT 
+  TICKER, 
+  MonthID, 
+  EventEA_ID, 
+  POST, 
+  1 AS Treated
+  FROM 
+  `dataset.TreatmentMonths`
+
+)
+
+
+SELECT *
+FROM TreatDF
+UNION ALL
+SELECT *
+FROM ControlDF
+
+
+
+-- SELECT 
+-- ds1.*, 
+-- ds2.datadate, 
+-- ds2.EA_ID
+-- FROM 
+-- FullMonths as ds1
+-- LEFT JOIN 
+-- (SELECT DISTINCT datadate, EA_ID, EventEA_ID
+-- FROM `dataset.TreatmentMonths` )AS ds2
+-- ON 
+-- ds1.EventEA_ID = ds2.EventEA_ID;
+
+
+
+

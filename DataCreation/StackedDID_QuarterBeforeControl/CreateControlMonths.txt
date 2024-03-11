@@ -1,0 +1,57 @@
+DECLARE NumEvents, Event INT64; 
+DECLARE ID STRING;
+DECLARE Months ARRAY<INT64>;
+SET NumEvents = (SELECT MAX(index_column) FROM dataset.EAEventList);
+SET Event = 1;
+
+CREATE OR REPLACE TABLE dataset.ControlMonths (
+    TICKER STRING,
+    MonthID INT64, 
+    EventEA_ID STRING
+);
+
+WHILE Event <= NumEvents
+DO 
+  -- Set ID for the loop
+  SET ID = (SELECT EventEA_ID FROM dataset.EAEventList WHERE index_column = Event);
+  SET Months = (
+  SELECT ARRAY_AGG(DISTINCT MonthID) AS MonthIDs
+  FROM dataset.TreatmentMonths
+  WHERE EventEA_ID = ID
+);
+
+  -- CREATE TEMP TABLE
+  INSERT INTO `dataset.ControlMonths`
+  SELECT DISTINCT -- select Ticker, Month and Event 
+    Controls.TICKER,
+    Controls.MonthID,
+    ID AS EventEA_ID
+  FROM
+     (
+    SELECT -- Select Event, Ticker and Months from treatment months for event 
+      EventEA_ID,
+      TICKER,
+      MonthID
+    FROM
+      `dataset.TreatmentMonths`
+    WHERE
+      EventEA_ID = ID
+  ) AS EventEA
+  JOIN
+    (
+    SELECT -- Right join with non-suspect control months with non-matching ticker 
+      TICKER, 
+      MonthID
+    FROM 
+      `dataset.MonthsWithSuspect`
+    WHERE 
+      Suspect = 0
+      and MonthID IN UNNEST(Months)
+  ) AS Controls
+  ON
+    EventEA.TICKER <> Controls.TICKER;
+ 
+  -- Set the next EventEA_ID
+  SET Event = Event + 1;
+
+END WHILE;

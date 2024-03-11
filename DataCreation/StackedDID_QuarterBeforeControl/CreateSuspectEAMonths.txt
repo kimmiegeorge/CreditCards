@@ -1,0 +1,96 @@
+-- CREATE STACKED DID TABLE 
+
+-- Create SuspectEA 
+-- Lists Ticker-EAID combinations that are Suspect 
+CREATE OR REPLACE TABLE dataset.SuspectEA AS
+SELECT DISTINCT
+  ds1.TICKER, 
+  ds1.EA_ID, 
+  CONCAT(ds1.TICKER, CAST(ds1.EA_ID AS STRING)) AS EventEA_ID,
+  1 AS POST
+FROM
+  `dataset.EA_Months` as ds1
+JOIN 
+  `dataset.EAData` as ds2
+ON 
+  ds1.TICKER = ds2.TICKER
+  AND ds1.datadate = ds2.datadate
+WHERE 
+  ds2.AnalystSUEDiff IS NOT NULL AND 
+  SAFE_CAST(ds2.AnalystSUEDiff AS FLOAT64) IS NOT NULL AND
+  SAFE_CAST(ds2.AnalystSUEDiff AS FLOAT64) >= 0 AND 
+  SAFE_CAST(ds2.AnalystSUEDiff AS FLOAT64) <= 0.02;
+
+
+-- Pull previous quarter for suspect months 
+CREATE OR REPLACE TABLE dataset.PrevQuarter AS
+SELECT
+  TICKER,
+  EA_ID - 1 AS EA_ID,
+  EventEA_ID,
+  0 AS POST
+FROM
+  (
+    SELECT
+      TICKER,
+      EventEA_ID,
+      EA_ID
+    FROM
+      `dataset.SuspectEA`
+);
+
+
+ -- Create Treated Months - Suspect ID and ID before and all associated months 
+ CREATE OR REPLACE TABLE dataset.TreatmentMonths AS
+  SELECT 
+    ds1.EA_ID,
+    ds1.TICKER,
+    ds1.EventEA_ID,
+    ds1.POST,
+    ds2.datadate, 
+    ds2.year, 
+    ds2.month, 
+    ds2.MonthID
+  FROM -- first bind together rows of PrevQuarter and SuspectEA
+  (
+    (
+    SELECT *
+    FROM `dataset.SuspectEA`
+    ORDER BY 
+    TICKER, 
+    EventEA_ID, 
+    EA_ID, 
+    POST )
+    UNION ALL
+    (SELECT *
+    FROM `dataset.PrevQuarter`
+    ORDER BY 
+    TICKER, 
+    EventEA_ID, 
+    EA_ID, 
+    POST)
+  ) AS ds1
+  INNER JOIN  -- inner join with EA_Months 
+    `dataset.EA_Months` AS ds2
+  ON 
+    ds1.EA_ID = ds2.EA_ID AND 
+    ds1.TICKER = ds2.TICKER;
+
+
+-- Create EA Months No Suspect NonSuspectMonths
+CREATE OR REPLACE TABLE dataset.MonthsWithSuspect AS
+  SELECT
+    t1.TICKER,
+    t1.EA_ID,
+    t1.MonthID,
+    t1.year, 
+    t1.month,
+    CASE WHEN t2.TICKER IS NOT NULL AND t2.EA_ID IS NOT NULL THEN 1 ELSE 0 END AS Suspect
+  FROM
+    `dataset.EA_Months` AS t1
+  LEFT JOIN
+    `dataset.SuspectEA` AS t2
+  ON
+    t1.TICKER = t2.TICKER
+    AND t1.EA_ID = t2.EA_ID;
+
