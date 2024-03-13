@@ -1,0 +1,91 @@
+---
+title: "Quarter Before Control Analysis"
+output: html_document
+date: "2024-03-12"
+---
+
+```{r setup, include=FALSE}
+# trace(stargazer:::.stargazer.wrap, edit = T) #7100
+#setwd('/Users/kimmiegeorge/Dropbox/SPAC_Round3/Results/Options')
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+library(pacman)
+p_load(data.table, dplyr, stargazer, DescTools, zoo, lfe, car, foreign, MASS, konfound, car, ppcor, lubridate, ggplot2, fwildclusterboot, fixest, Hmisc, gridExtra)
+
+
+```
+
+```{css, echo = FALSE}
+
+table, td, th {
+  border: none;
+  padding-left: 1em;
+  padding-right: 1em;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+```
+
+```{r loadData, echo = FALSE}
+
+filter <- 50
+
+dta_dir <- '~/Dropbox/CreditCards/Data/DiD_QuarterBeforeControl_Update/'
+dta <- readRDS(paste0(dta_dir, "StackedData_EmployedFullEvent.RDS"))
+turn <- readRDS(paste0(dta_dir, "StackedData_Turnover.RDS"))
+
+# filter on number of cards per firm-event 
+dta[, NumCards := uniqueN(ARM_ID_NBR), .(TICKER, Event)]
+dta <- dta[NumCards >= filter]
+
+turn[, NumCards := uniqueN(ARM_ID_NBR), .(TICKER, Event)]
+turn <- turn[NumCards >= filter]
+
+# check treat 
+dta[, MaxTreat := max(Treat), .(Event)]
+dta <- dta[MaxTreat == 1]
+
+turn[, MaxTreat := max(Treat), .(Event)]
+turn <- turn[MaxTreat == 1]
+```
+
+```{r createVars, echo = FALSE}
+dta[, UserEvent := paste0(ARM_ID_NBR, "_", Event)]
+dta[, MonthEvent := paste0(as.character(MonthID), "_", Event)]
+dta[, TickerMonth := paste0(TICKER, "_", as.character(MonthID))]
+```
+
+```{r Wins, echo = FALSE}
+
+# Wins
+dta[, DepositsWin := Winsorize(MonthlyDeposits, probs = c(0.01, 0.99))]
+dta[, logDeposits := log(MonthlyDeposits)]
+dta[, logDepositsWin := Winsorize(logDeposits, probs = c(0.01, 0.99))]
+
+```
+
+```{r reg, echo = FALSE}
+
+dta_noWMT <- dta[TICKER != "WMT"]
+dta_noWMT[, MaxTreat := max(Treat), .(Event)]
+dta_noWMT <- dta_noWMT[MaxTreat == 1]
+
+
+reg_full <- felm(logDeposits ~ Post:Treat|UserEvent+MonthEvent|0|0, data = dta)
+summary(reg_full)
+
+reg_full_tm <- felm(logDeposits ~ Post:Treat|UserEvent+MonthEvent|0|TickerMonth, data = dta_noWMT)
+summary(reg_full_tm)
+
+reg_full_t <- felm(logDeposits ~ Post:Treat|UserEvent+MonthEvent|0|TICKER + MonthID, data = dta)
+summary(reg_full_t)
+
+turn_adj <- unique(turn[, .(ARM_ID_NBR, TICKER, FullEmployPost, Treat, Event)])
+reg_full_t <- felm(FullEmployPost ~ Treat|Event|0|TICKER, data = turn)
+summary(reg_full_t)
+
+```
+
